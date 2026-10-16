@@ -1,0 +1,14 @@
+#!/bin/sh
+# 修复 /sbin/tempinfo 的可执行权限
+#
+
+if [ -f /sbin/tempinfo ]; then
+	if [ ! -x /sbin/tempinfo ]; then
+		chmod +x /sbin/tempinfo
+		logger -t tempinfo-perm "已补 /sbin/tempinfo 可执行权限"
+	fi
+else
+	logger -t tempinfo-perm "警告：/sbin/tempinfo 不存在，概览页无温度行"
+fi
+
+exit 0

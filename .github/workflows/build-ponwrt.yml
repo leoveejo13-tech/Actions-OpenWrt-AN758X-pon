@@ -259,6 +259,8 @@ jobs:
           cd "$BUILD_ROOT/openwrt"
           if [ -n "${FEEDS_CONF}" ] && [ -e "$GITHUB_WORKSPACE/${FEEDS_CONF}" ]; then
             cp "$GITHUB_WORKSPACE/${FEEDS_CONF}" feeds.conf.default
+            # 去掉 Windows 提交可能带入的 CRLF：\r 混进 feed URL 会导致 clone 失败
+            sed -i 's/\r$//' feeds.conf.default
           fi
           ./scripts/feeds update -a
           ./scripts/feeds install -a

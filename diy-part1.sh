@@ -12,7 +12,8 @@
 #      a. 把 OpenWrt_ONU_CONFIG 自带的 firewall4 补丁装进 packages feed
 #      b. airoha_luci 各 app 的 po 文件改名（luci.mk 按 basename 查 lmo）
 #      c. 拉 qwe3017/luci-app 的 luci-app-pon-status / luci-app-natmode
-#      d. 重建包索引并校验关键包
+#      d. 给 03_pon_data 注入 fiberhome 身份字段布局（pon_mac/pon_sn）
+#      e. 重建包索引并校验关键包
 # ================================================================
 
 set -uo pipefail
@@ -31,6 +32,11 @@ ADD_LUCI_APP=true      # qwe3017/luci-app 仓库（monorepo）
                        #   ├─ luci-app-pon-status  PON 光模块卡片（概览页「系统」下一格）
                        #   └─ luci-app-natmode     NAT 类型三选一（网络 → NAT 类型）
 ADD_FW4_PATCH=true     # naoki66 firewall4 flowtable 补丁（luci-app-onu 上网页 PPE 卸载需要）
+ADD_FH_IDENTITY=true   # fiberhome 身份布局注入：ONU→硬件身份页可读/改 SN、MAC
+                       #   布局同 pbs05/fiberhome-factory（HG5382A 镜像验证）：
+                       #   0x2000(8192)  Base MAC  6B 二进制          -> mac-binary6
+                       #   0x2010(8208)  PON SN    4厂商+4字节       -> pon-binary8
+                       #   0x2020(8224)  整机SN    32B ASCII         -> serial-text
 
 clone() {  # clone <url> <dir> [branch]
   local url="$1" dir="$2" br="$3"
@@ -99,7 +105,66 @@ if [ "$ADD_LUCI_APP" = "true" ]; then
 fi
 
 # =========================================================
-# 3. airoha_luci feed 的 po 文件改名
+# 3. fiberhome 身份字段布局注入（target 侧 board.d）
+#
+#    ponwrt 的 target/linux/airoha/base-files/etc/board.d/03_pon_data
+#    只给 gemtek / nokia / h3c 声明了 identity 布局，fiberhome 三机型
+#    （hg5382a / hg5585f-ct / hg5585f-cu）只有 pon_data 存储目标，
+#    导致 ONU→硬件身份页报「读不到板载身份布局」。
+#
+#    布局与 pbs05/fiberhome-factory 的权威定义一致（镜像经该工具
+#    从原厂数据生成，volume 内偏移）：
+#      0x2000  Base MAC，6 字节二进制          -> mac-binary6
+#      0x2010  PON SN，4厂商ASCII+4字节二进制  -> pon-binary8
+#              （FHTT + C0D74532 -> FHTTC0D74532）
+#      0x2020  整机序列号，32 字节 ASCII 区    -> serial-text
+#    头部 APONCAL / UX3363 / GPON / MT7916 EEPROM 为校准数据，不要动。
+#
+#    注入方式：在 identity case 的收尾 esac 之前插入 fiberhome 分支
+#    （awk 定位：见过 identity_field 后的第一个 esac——h3c 在文件里
+#    出现两次，不能拿机型名当锚点）
+# =========================================================
+if [ "$ADD_FH_IDENTITY" = "true" ]; then
+  PON_DATA="target/linux/airoha/base-files/etc/board.d/03_pon_data"
+  if [ ! -f "$PON_DATA" ]; then
+    echo "::warning::未找到 $PON_DATA，跳过 fiberhome 身份布局注入"
+  elif grep -q "identity_field pon_mac mac 8192" "$PON_DATA"; then
+    echo "已注入过 fiberhome 身份布局，跳过"
+  else
+    awk '
+      /^\tidentity_field / { seen_identity = 1 }
+      seen_identity && /^esac$/ && !done {
+        print "fiberhome,hg5382a|fiberhome,hg5585f-ct|fiberhome,hg5585f-cu)"
+        print "\tidentity_available=1"
+        print "\tjson_add_object identity"
+        print "\tjson_add_object targets"
+        print "\tjson_add_object factory"
+        print "\tjson_add_object fields"
+        print "\t# HG5382A factory 布局（pbs05/fiberhome-factory 同款）："
+        print "\t#   0x2000 Base MAC(6B) 0x2010 PON SN(4厂商ASCII+4字节) 0x2020 整机SN(32B ASCII)"
+        print "\tidentity_field pon_mac mac 8192 6 mac-binary6"
+        print "\tidentity_field pon_sn pon-sn 8208 8 pon-binary8"
+        print "\tidentity_field device_sn device-sn 8224 32 serial-text"
+        print "\tjson_close_object"
+        print "\tjson_close_object"
+        print "\tjson_close_object"
+        print "\tjson_close_object"
+        print "\t;;"
+        done = 1
+      }
+      { print }
+    ' "$PON_DATA" > "$PON_DATA.new" && mv "$PON_DATA.new" "$PON_DATA"
+    if grep -q "identity_field pon_sn pon-sn 8208" "$PON_DATA"; then
+      echo "✅ fiberhome 身份布局已注入（pon_mac@8192 / pon_sn@8208）"
+    else
+      echo "::error::fiberhome 身份布局注入失败，检查 $PON_DATA 结构是否变化"
+      exit 1
+    fi
+  fi
+fi
+
+# =========================================================
+# 4. airoha_luci feed 的 po 文件改名
 #
 #    luci.mk 的 i18n install 规则：
 #      po2lmo $(po) → $(LUCI_LIBRARYDIR)/i18n/$(basename $(notdir $(po))).$(lang).lmo
@@ -133,7 +198,7 @@ for appdir in feeds/airoha_luci/luci-app-*; do
 done
 
 # =========================================================
-# 4. 检查重复嵌套目录（防止 feed 索引中断）
+# 5. 检查重复嵌套目录（防止 feed 索引中断）
 # =========================================================
 echo "--- 检查重复嵌套目录 ---"
 for d in "$PKG_DIR"/*; do
@@ -146,7 +211,7 @@ for d in "$PKG_DIR"/*; do
 done
 
 # =========================================================
-# 5. 强制重建包索引
+# 6. 强制重建包索引
 #
 #   package/custom 下的包不需要注册 feed（scan.mk 直接扫 package/ 树），
 #   但新增文件后必须清掉扫描 stamp 再跑 prepare-tmpinfo，否则
@@ -160,7 +225,7 @@ echo ">>> make prepare-tmpinfo（重新扫描 package/ 树）"
 make -s prepare-tmpinfo OPENWRT_BUILD= 2>&1 | tail -5 || true
 
 # =========================================================
-# 6. 包索引校验
+# 7. 包索引校验
 # =========================================================
 echo "=========================================="
 echo "包索引校验（判据：tmp/.packageinfo）"

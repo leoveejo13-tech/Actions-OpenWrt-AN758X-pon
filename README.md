@@ -37,6 +37,17 @@
    并对 `luci-i18n-onu-zh-cn` 做中文包警告检查。
 5. **固件版本后缀**：作者名改为 `maple`（workflow env `FW_AUTHOR` 唯一真相源，
    触发时也可用 `fw_author` 输入临时覆盖）。
+6. **fiberhome 身份布局注入**（`diy-part1.sh` 开关 `ADD_FH_IDENTITY`，默认开）：
+   ponwrt 的 `03_pon_data` 只给 gemtek/nokia/h3c 声明了 identity，fiberhome 三机型
+   的 ONU→硬件身份页会报「读不到板载身份布局」。本仓库按 **pbs05/fiberhome-factory**
+   的权威布局注入（HG5382A 镜像验证，volume 内偏移）：
+
+   | 偏移 | 大小 | 内容 | 声明 |
+   |------|------|------|------|
+   | 0x2000 (8192) | 6B | Base MAC，二进制 | `pon_mac` / `mac-binary6` |
+   | 0x2010 (8208) | 8B | PON SN：4 厂商字符 + 4 字节二进制（FHTT+C0D74532 → FHTTC0D74532） | `pon_sn` / `pon-binary8` |
+   | 0x2020 (8224) | 32B | 整机序列号，ASCII | `device_sn` / `serial-text` |
+   | 0x0000-0x1FFF | — | APONCAL 校准 + MT7916 EEPROM | 不开放编辑，勿动 |
 
 ## 支持的机型
 

@@ -7,7 +7,8 @@
 #   1) pon_userspace feed 已在 feeds.conf 里换源为 naoki66/OpenWrt_ONU_CONFIG
 #      （luci-app-pon/luci-app-iptv -> luci-app-onu），这里不再重复处理；
 #   2) airoha_luci feed（naoki66/luci-app-airoha）随 feeds.conf 拉入，
-#      提供 luci-app-airoha-{npu,fancontrol,recovery,factory,mesh-conf,netmode}；
+#      提供 luci-app-airoha-{npu,fancontrol,recovery,factory,mesh-conf,netmode}
+#      + luci-app-clients；
 #   3) 这里负责：
 #      a. 把 OpenWrt_ONU_CONFIG 自带的 firewall4 补丁装进 packages feed
 #      b. airoha_luci 各 app 的 po 文件改名（luci.mk 按 basename 查 lmo）
@@ -191,7 +192,7 @@ for appdir in feeds/airoha_luci/luci-app-*; do
       fi
       # 确保中文 po 的 Language 头存在（po2lmo 识别语言用）
       if [[ "$target" == */zh_Hans/* ]] && ! grep -q '^"Language:' "$target"; then
-        sed -i 's/^msgstr ""$/msgstr ""\n"Language: zh_Hans\\n"/' "$target"
+        sed -i '0,/^msgstr ""$/s//msgstr ""\n"Language: zh_Hans\\n"/' "$target"
       fi
     done
   done
@@ -246,7 +247,7 @@ done
 # 6b. airoha_luci feed（naoki66/luci-app-airoha）
 echo "airoha_luci feed（naoki66/luci-app-airoha）："
 for p in luci-app-airoha-npu luci-app-airoha-fancontrol luci-app-airoha-recovery \
-         luci-app-airoha-factory luci-app-mesh-conf luci-app-netmode; do
+         luci-app-airoha-factory luci-app-mesh-conf luci-app-netmode luci-app-clients; do
   if grep -qx "Package: $p" tmp/.packageinfo 2>/dev/null; then
     echo "  ✅ $p"
   else

@@ -7,7 +7,7 @@
 | 仓库 | 接入方式 | 提供 |
 |------|---------|------|
 | [naoki66/OpenWrt_ONU_CONFIG](https://github.com/naoki66/OpenWrt_ONU_CONFIG) | 替换 `pon_userspace` feed（feeds.conf） | `airoha-pond`（OMCI/OAM 代理）、`airoha-ponctl`（线路控制，Rust）、`airoha-pon-debug`（抓包诊断）、`luci-app-onu`（顶级 ONU 菜单：状态/硬件身份/认证/上网/IPTV/语音/诊断）+ firewall4 flowtable 补丁 |
-| [naoki66/luci-app-airoha](https://github.com/naoki66/luci-app-airoha) | 新增 `airoha_luci` feed（feeds.conf） | `luci-app-airoha-npu`（SoC/NPU 状态页）、`luci-app-airoha-fancontrol`、`luci-app-airoha-recovery`、`luci-app-airoha-factory`、`luci-app-mesh-conf`、`luci-app-netmode` |
+| [naoki66/luci-app-airoha](https://github.com/naoki66/luci-app-airoha) | 新增 `airoha_luci` feed（feeds.conf） | `luci-app-airoha-npu`（SoC/NPU 状态页）、`luci-app-airoha-fancontrol`、`luci-app-airoha-recovery`、`luci-app-airoha-factory`、`luci-app-mesh-conf`、`luci-app-netmode`、`luci-app-clients`（网络终端页：地址来源/每设备流量/无线关联） |
 
 ## 与蓝本的关键差异
 
@@ -21,13 +21,14 @@
    - 删除独立的 `luci-app-iptv` / `luci-i18n-iptv-zh-cn`（已并入 onu）
    - 新增 `CONFIG_BUSYBOX_CONFIG_DEVMEM=y` + `CONFIG_KERNEL_DEVMEM=y`
      （naoki66 版 airoha-npu 状态页的 Frame Engine 寄存器读取依赖 devmem）
-   - 追加 naoki66 luci-app-airoha 其余 5 个插件的注释行，按需取消注释
+   - 追加 naoki66 luci-app-airoha 其余 6 个插件的注释行，按需取消注释
 3. **diy-part1.sh 重写**：
    - 把 OpenWrt_ONU_CONFIG 自带的 `patches/firewall4/010-fw4-zone-device-flowtable.patch`
      拷到 `feeds/packages/net/firewall4/patches/`（zone device 也参与 flowtable
      卸载解析，PPPoE 会话下物理网口才能命中硬件卸载）；
-   - airoha_luci 全部 6 个 app 的 `po/zh_Hans/luci-app-xxx.po` 改名为
-     `xxx.po`（luci.mk 按 LUCI_BASENAME 查找 lmo，不改名中文不生效）；
+   - airoha_luci 6 个 app 的 `po/zh_Hans/luci-app-xxx.po` 改名为
+     `xxx.po`（luci-app-clients 上游已是 `clients.po`，脚本自动跳过；
+     luci.mk 按 LUCI_BASENAME 查找 lmo，不改名中文不生效）；
    - 继续拉取 qwe3017/luci-app 的 `luci-app-pon-status`（PON 光模块卡片）与
      `luci-app-natmode`（NAT 类型三选一）到 `package/custom`；
    - 重建包索引并强校验：`airoha-pond` `airoha-ponctl` `airoha-pon-debug`
@@ -77,7 +78,8 @@
 ls /usr/share/luci/menu.d/luci-app-onu.json
 # firewall4 补丁生效（zone device flowtable）
 grep -c zone_offload_devices /usr/share/ucode/fw4.uc
-# NPU 状态页
+# NPU 状态页（菜单/ACL 随 2026-11 上游包安装修复一起进固件，缺了会 404）
+ls /usr/share/luci/menu.d/luci-app-airoha-npu.json
 dmesg | grep -i npu
 ```
 
